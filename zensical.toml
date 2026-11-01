@@ -1,0 +1,81 @@
+[project]
+site_name = "boxwood"
+site_description = "Fast oblivious tree ensembles from CatBoost: refit, prune, update, predict"
+site_author = "boxwood contributors"
+# The site sources live in docs/site.
+docs_dir = "docs/site"
+site_dir = "build/site"
+extra_javascript = [
+  "javascripts/mathjax.js",
+  "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
+]
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Tutorials" = [
+    "tutorials/index.md",
+    { "Import a CatBoost model and predict" = "tutorials/import-and-predict.md" },
+    { "Refit the leaf values" = "tutorials/refit-leaves.md" },
+    { "Prune to a split budget" = "tutorials/prune.md" },
+    { "Update a model online" = "tutorials/online-update.md" },
+    { "Fast inference" = "tutorials/fast-inference.md" },
+  ] },
+  { "How to" = [
+    "how-to/index.md",
+    { "Use the scikit-learn estimators" = "how-to/estimators.md" },
+    { "Fit on data larger than memory" = "how-to/large-data.md" },
+    { "Save and load a model" = "how-to/save-load.md" },
+    { "Use boxwood from C++" = "how-to/cpp.md" },
+    { "Benchmark against CatBoost" = "how-to/benchmark.md" },
+  ] },
+  { "Explanations" = [
+    "explanations/index.md",
+    { "Oblivious trees" = "explanations/oblivious-trees.md" },
+    { "Encoding CatBoost's features" = "explanations/encoding.md" },
+    { "How prediction is fast" = "explanations/prediction.md" },
+    { "Numerics and int8 leaves" = "explanations/numerics.md" },
+    { "Refitting the leaves" = "explanations/leaf-fit.md" },
+    { "Pruning" = "explanations/pruning.md" },
+  ] },
+  { "Reference" = [
+    { "Python API" = "reference/python.md" },
+    { "C++ API" = "reference/cpp.md" },
+    { "Serialized format" = "reference/format.md" },
+    { "Performance" = "reference/performance.md" },
+  ] },
+]
+
+[project.theme]
+features = [
+  "content.code.copy",
+  "navigation.indexes",
+  "navigation.path",
+  "navigation.top",
+  "search.highlight",
+  "toc.follow",
+]
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["python"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+docstring_section_style = "spacy"
+merge_init_into_class = false
+show_root_heading = true
+show_root_full_path = false
+show_source = false
+show_signature_annotations = true
+separate_signature = true
+members_order = "source"
+filters = ["!^_"]
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+def_list = {}
+tables = {}
+pymdownx.details = {}
+pymdownx.highlight = { anchor_linenums = true }
+pymdownx.arithmatex = { generic = true }
+pymdownx.superfences = {}

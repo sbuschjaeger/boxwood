@@ -1,0 +1,9 @@
+.venv/
+logs/
+build/
+__pycache__/
+*.pyc
+*.so
+catboost_info/
+data/
+experiments/models/

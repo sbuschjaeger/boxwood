@@ -1,0 +1,26 @@
+[build-system]
+requires = ["scikit-build-core>=0.11", "nanobind>=2.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "boxwood"
+version = "0.1.0"
+description = "Oblivious tree ensembles from CatBoost: refit, prune, update and predict fast"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = ["numpy", "pandas", "scikit-learn", "catboost"]
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.build-type = "Release"
+# Inside the repository, next to the CMake presets' build directories.
+build-dir = "build/pip"
+# The .py files come from here; CMake installs only the extension module.
+wheel.packages = ["python/boxwood"]
+# Only what a build needs (the ignore patterns of .gitignore are not applied to
+# every directory here).
+sdist.exclude = [".venv", "build", "logs", "catboost_info", "docs", "tests", "experiments", "zensical.toml"]
+
+[tool.scikit-build.cmake.define]
+BOXWOOD_TESTS = "OFF"
