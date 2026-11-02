@@ -56,15 +56,17 @@ bool neon_available() { return true; }  // part of every AArch64 CPU
 const Backend kBackends[] = {
 #if defined(BOXWOOD_SIMD_x86)
     {"avx512_vbmi", avx512_vbmi_available, 64, avx512_vbmi::encode_numeric, avx512_vbmi::accumulate,
-     avx512_vbmi::leaf_index, avx512_vbmi::ctr_lookup},
+     avx512_vbmi::leaf_index, avx512_vbmi::ctr_lookup, avx512_vbmi::leaves_one},
     {"avx512", avx512_available, 64, avx512::encode_numeric, avx512::accumulate, avx512::leaf_index,
-     scalar::ctr_lookup},
-    {"avx2", avx2_available, 32, avx2::encode_numeric, avx2::accumulate, avx2::leaf_index, scalar::ctr_lookup},
+     scalar::ctr_lookup, avx2::leaves_one},
+    {"avx2", avx2_available, 32, avx2::encode_numeric, avx2::accumulate, avx2::leaf_index, scalar::ctr_lookup,
+     avx2::leaves_one},
 #elif defined(BOXWOOD_SIMD_neon)
-    {"neon", neon_available, 16, scalar::encode_numeric, neon::accumulate, neon::leaf_index, scalar::ctr_lookup},
+    {"neon", neon_available, 16, scalar::encode_numeric, neon::accumulate, neon::leaf_index, scalar::ctr_lookup,
+     scalar::leaves_one},
 #endif
     {"scalar", scalar_available, 1, scalar::encode_numeric, scalar::accumulate, scalar::leaf_index,
-     scalar::ctr_lookup},
+     scalar::ctr_lookup, scalar::leaves_one},
 };
 
 }  // namespace

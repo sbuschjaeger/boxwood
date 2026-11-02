@@ -101,7 +101,7 @@ void accumulate_int8(const OTEView& v, const uint8_t* codes, size_t n_obs, doubl
       }
     }
   }
-  scalar::accumulate_tail(v, codes, n_obs, i0, margins);
+  scalar::accumulate_tail(v, codes, n_obs, i0, margins, scalar::leaves_one);
 }
 
 }  // namespace
@@ -126,7 +126,7 @@ void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* o
       for (int j = 0; j < 16; ++j) out[(i0 + static_cast<size_t>(j)) * T + t] = idx[j];
     }
   }
-  scalar::leaf_index_tail(v, codes, n_obs, i0, out);
+  scalar::leaf_index_tail(v, codes, n_obs, i0, out, scalar::leaves_one);
 }
 
 }  // namespace neon

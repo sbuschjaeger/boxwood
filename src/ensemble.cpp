@@ -183,6 +183,26 @@ void ObliviousTreeEnsemble::build_split_conditions() {
     const Cond key{split_feature_[s], split_kind_[s], split_arg_[s]};
     split_cond_[s] = static_cast<uint32_t>(std::lower_bound(conds.begin(), conds.end(), key) - conds.begin());
   }
+
+  // The slots of the single-observation kernels: the padding (other levels, other trees) is
+  // feature 0 > 255, which is never true.
+  const size_t n_features = numeric_column_.size() + onehot_column_.size() + ctr_table_.size();
+  const size_t padded = (depth_.size() + 7) / 8 * 8;
+  slot_feature_.clear();
+  slot_arg_.clear();
+  slot_eq_.clear();
+  if (n_features > 256) return;
+  slot_feature_.assign(padded * 8, 0);
+  slot_arg_.assign(padded * 8, 255);
+  slot_eq_.assign(padded / 8, 0);
+  for (size_t t = 0; t < depth_.size(); ++t) {
+    for (size_t l = 0; l < depth_[t]; ++l) {
+      const size_t s = split_begin_[t] + l, slot = 8 * t + l;
+      slot_feature_[slot] = static_cast<uint8_t>(split_feature_[s]);
+      slot_arg_[slot] = split_arg_[s];
+      if (split_kind_[s] != 0) slot_eq_[slot / 64] |= uint64_t{1} << (slot % 64);
+    }
+  }
 }
 
 void ObliviousTreeEnsemble::build_ctr_hash_tables() {
@@ -311,6 +331,9 @@ OTEView ObliviousTreeEnsemble::view() const {
   v.cond_kind = cond_kind_.data();
   v.cond_arg = cond_arg_.data();
   v.split_cond = split_cond_.data();
+  v.slot_feature = slot_feature_.empty() ? nullptr : slot_feature_.data();
+  v.slot_arg = slot_arg_.data();
+  v.slot_eq = slot_eq_.data();
   v.leaf_type = leaf_type_;
   v.tree_mult = tree_mult_.data();
   v.block_unit = block_unit_.data();
@@ -469,10 +492,10 @@ void ObliviousTreeEnsemble::set_leaf_type(LeafType type) {
 Info ObliviousTreeEnsemble::info() const {
   Info i;
   i.task = task_;
-  i.n_outputs = K_;
+  i.n_outputs = n_outputs();
   i.n_numeric = n_numeric_;
   i.n_categorical = n_categorical_;
-  i.n_trees = static_cast<uint32_t>(depth_.size());
+  i.n_trees = n_trees();
   i.n_splits = static_cast<uint32_t>(split_feature_.size());
   i.tree_bytes = 0;
   for (const uint8_t d : depth_) i.tree_bytes += tree_bytes(d);

@@ -232,6 +232,12 @@ class ObliviousTreeEnsemble {
   /// number of splits, and the CatBoost column of every feature.
   Info info() const;
 
+  /// The number of outputs K (info().n_outputs, without building the whole Info).
+  uint32_t n_outputs() const { return K_; }
+
+  /// The number of trees (info().n_trees, without building the whole Info).
+  uint32_t n_trees() const { return static_cast<uint32_t>(depth_.size()); }
+
   /// One split of a tree. `source` is 0 = numeric (index = numeric column),
   /// 1 = one-hot (index = categorical feature index) and 2 = CTR (index = CTR
   /// feature). `kind` is 0 for "code > arg" and 1 for "code == arg"; `arg` is
@@ -434,6 +440,9 @@ class ObliviousTreeEnsemble {
   std::vector<uint8_t> cond_kind_;
   std::vector<uint8_t> cond_arg_;
   std::vector<uint32_t> split_cond_;          // the condition of each split
+  std::vector<uint8_t> slot_feature_;         // the splits in 8 slots per tree (see OTEView::slot_feature)
+  std::vector<uint8_t> slot_arg_;
+  std::vector<uint64_t> slot_eq_;
   std::vector<uint32_t> leaf_begin_;          // T + 1, into leaves_; tree t occupies 2^depth[t] * K values
 
   // Derived, not serialized: each numeric split feature's borders as a

@@ -49,42 +49,13 @@ void tree_leaves(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0
   }
 }
 
-/// Observations up to this count take few_leaves instead of tree_leaves.
+/// Observations up to this count take the backend's leaves_one instead of tree_leaves.
 constexpr size_t kFewObservations = 8;
-
-/// Leaf indices of observations [i0, n_obs) of a block in all trees, tree-major
-/// (n_obs - i0 per tree). Each distinct split condition is evaluated once per
-/// observation and the trees read their splits' results, as QuickScorer does:
-/// for a few observations, the passes of tree_leaves cost more in loop setup
-/// than in compares.
-std::vector<uint8_t> few_leaves(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0) {
-  const size_t n = n_obs - i0;
-  std::vector<uint8_t> bit(v.n_conds), idx(size_t{v.n_trees} * n);
-  for (size_t i = i0; i < n_obs; ++i) {
-    for (uint32_t c = 0; c < v.n_conds; ++c) {
-      const uint8_t code = codes[size_t{v.cond_feature[c]} * n_obs + i];
-      bit[c] = v.cond_kind[c] != 0 ? code == v.cond_arg[c] : code > v.cond_arg[c];
-    }
-    for (uint32_t t = 0; t < v.n_trees; ++t) {
-      const uint32_t* split = v.split_cond + v.split_begin[t];
-      uint32_t leaf = 0;
-      for (uint32_t l = 0; l < v.depth[t]; ++l) leaf |= uint32_t{bit[split[l]]} << l;
-      idx[size_t{t} * n + (i - i0)] = static_cast<uint8_t>(leaf);
-    }
-  }
-  return idx;
-}
 
 /// Calls f(t, idx) for every tree t in order, with idx the leaf indices of
 /// observations [i0, n_obs) in tree t.
 template <class F>
 void for_each_tree(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, F f) {
-  const size_t n = n_obs - i0;
-  if (n <= kFewObservations) {
-    const std::vector<uint8_t> idx = few_leaves(v, codes, n_obs, i0);
-    for (uint32_t t = 0; t < v.n_trees; ++t) f(t, idx.data() + size_t{t} * n);
-    return;
-  }
   uint8_t idx[kBlockSize];
   for (uint32_t t = 0; t < v.n_trees; ++t) {
     tree_leaves(v, codes, n_obs, i0, t, idx);
@@ -92,7 +63,47 @@ void for_each_tree(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t 
   }
 }
 
+/// Adds the leaf values of one observation, given its leaf index in every tree, to its K margins m, by the
+/// rule of accumulate_tail. Each margin is summed in a local, as a chain of additions in tree order (or
+/// block order for Int8).
+void add_leaves_one(const OTEView& v, const uint8_t* idx, double* m) {
+  for (uint32_t k = 0; k < v.K; ++k) {
+    double sum = m[k];
+    if (v.leaf_type == LeafType::Float32) {
+      for (uint32_t t = 0; t < v.n_trees; ++t) {
+        sum += static_cast<double>(v.leaves_by_output[v.leaf_out_begin[t * v.K + k] + idx[t]]);
+      }
+    } else {
+      for (uint32_t t0 = 0; t0 < v.n_trees; t0 += kInt8TreeBlock) {
+        int32_t block = 0;
+        for (uint32_t t = t0; t < std::min(t0 + kInt8TreeBlock, v.n_trees); ++t) {
+          block += v.leaves_q_by_output[v.leaf_out_begin[t * v.K + k] + idx[t]] * v.tree_mult[t];
+        }
+        sum += v.block_unit[t0 / kInt8TreeBlock] * static_cast<double>(block);
+      }
+    }
+    m[k] = sum;
+  }
+}
+
+/// A buffer for the leaf indices of one observation (see leaves_one).
+std::vector<uint8_t> leaf_row(const OTEView& v) { return std::vector<uint8_t>((size_t{v.n_trees} + 7) / 8 * 8); }
+
 }  // namespace
+
+void leaves_one(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, uint8_t* idx) {
+  std::vector<uint8_t> bit(v.n_conds);
+  for (uint32_t c = 0; c < v.n_conds; ++c) {
+    const uint8_t code = codes[size_t{v.cond_feature[c]} * n_obs + i];
+    bit[c] = v.cond_kind[c] != 0 ? code == v.cond_arg[c] : code > v.cond_arg[c];
+  }
+  for (uint32_t t = 0; t < v.n_trees; ++t) {
+    const uint32_t* split = v.split_cond + v.split_begin[t];
+    uint32_t leaf = 0;
+    for (uint32_t l = 0; l < v.depth[t]; ++l) leaf |= uint32_t{bit[split[l]]} << l;
+    idx[t] = static_cast<uint8_t>(leaf);
+  }
+}
 
 void encode_numeric_tail(const OTEView& v, const float* X, size_t n_obs, size_t i0, uint8_t* codes) {
   for (uint32_t f = 0; f < v.n_numeric_features; ++f) {
@@ -102,7 +113,16 @@ void encode_numeric_tail(const OTEView& v, const float* X, size_t n_obs, size_t 
   }
 }
 
-void accumulate_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, double* margins) {
+void accumulate_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, double* margins,
+                     LeavesOne one) {
+  if (n_obs - i0 <= kFewObservations) {
+    std::vector<uint8_t> idx = leaf_row(v);
+    for (size_t i = i0; i < n_obs; ++i) {
+      one(v, codes, n_obs, i, idx.data());
+      add_leaves_one(v, idx.data(), margins + i * v.K);
+    }
+    return;
+  }
   if (v.leaf_type == LeafType::Float32) {
     for_each_tree(v, codes, n_obs, i0, [&](uint32_t t, const uint8_t* idx) {
       for (size_t i = i0; i < n_obs; ++i) {
@@ -132,7 +152,16 @@ void accumulate_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_
   });
 }
 
-void leaf_index_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, uint8_t* out) {
+void leaf_index_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, uint8_t* out,
+                     LeavesOne one) {
+  if (n_obs - i0 <= kFewObservations) {
+    std::vector<uint8_t> idx = leaf_row(v);
+    for (size_t i = i0; i < n_obs; ++i) {
+      one(v, codes, n_obs, i, idx.data());
+      std::copy(idx.begin(), idx.begin() + v.n_trees, out + i * v.n_trees);
+    }
+    return;
+  }
   for_each_tree(v, codes, n_obs, i0, [&](uint32_t t, const uint8_t* idx) {
     for (size_t i = i0; i < n_obs; ++i) out[i * v.n_trees + t] = idx[i - i0];
   });
@@ -143,11 +172,11 @@ void encode_numeric(const OTEView& v, const float* X, size_t n_obs, uint8_t* cod
 }
 
 void accumulate(const OTEView& v, const uint8_t* codes, size_t n_obs, double* margins) {
-  accumulate_tail(v, codes, n_obs, 0, margins);
+  accumulate_tail(v, codes, n_obs, 0, margins, leaves_one);
 }
 
 void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* out) {
-  leaf_index_tail(v, codes, n_obs, 0, out);
+  leaf_index_tail(v, codes, n_obs, 0, out, leaves_one);
 }
 
 }  // namespace scalar

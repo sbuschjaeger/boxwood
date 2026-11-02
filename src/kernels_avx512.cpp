@@ -17,6 +17,7 @@
 
 #include <immintrin.h>
 
+#include <cstring>
 
 #include "kernels.hpp"
 #include "simd.hpp"
@@ -35,6 +36,13 @@ namespace {
 
 // No namespace-scope SIMD constants: their initializers would run at load time,
 // also on a CPU without AVX-512, before the run-time check picks a backend.
+
+// The leaves_one of this backend, for the observations of a block that do not fill a group.
+#if BOXWOOD_AVX512_VBMI
+constexpr scalar::LeavesOne kLeavesOne = leaves_one;
+#else
+constexpr scalar::LeavesOne kLeavesOne = avx2::leaves_one;
+#endif
 
 /// Number of registers of a table of 32 * G floats; G = 0: at most 16 floats.
 constexpr int table_regs(int G) { return G == 0 ? 1 : 2 * G; }
@@ -177,7 +185,7 @@ void accumulate_float(const OTEView& v, const uint8_t* codes, size_t n_obs, doub
     }
     copy_margins(margins, K, i0, m.data(), obs_of, false);
   }
-  scalar::accumulate_tail(v, codes, n_obs, i0, margins);
+  scalar::accumulate_tail(v, codes, n_obs, i0, margins, kLeavesOne);
 }
 
 /// table[idx] in 64 byte lanes from a table of 16 * P int8 codes: pshufb looks
@@ -305,7 +313,7 @@ void accumulate_int8(const OTEView& v, const uint8_t* codes, size_t n_obs, doubl
     }
     copy_margins(margins, K, i0, m.data(), obs_of, false);
   }
-  scalar::accumulate_tail(v, codes, n_obs, i0, margins);
+  scalar::accumulate_tail(v, codes, n_obs, i0, margins, kLeavesOne);
 }
 
 }  // namespace
@@ -374,7 +382,7 @@ void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* o
       for (int j = 0; j < 64; ++j) out[(i0 + static_cast<size_t>(j)) * T + t] = idx[j];
     }
   }
-  scalar::leaf_index_tail(v, codes, n_obs, i0, out);
+  scalar::leaf_index_tail(v, codes, n_obs, i0, out, kLeavesOne);
 }
 
 #if BOXWOOD_AVX512_VBMI
@@ -416,6 +424,31 @@ void ctr_lookup(const OTEView& v, uint32_t q, const uint64_t* hash, size_t n_obs
     i0 = full;
   }
   scalar::ctr_codes_tail(v, q, slot, n_obs, i0, codes);
+}
+
+void leaves_one(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, uint8_t* idx) {
+  if (v.slot_feature == nullptr) {
+    scalar::leaves_one(v, codes, n_obs, i, idx);
+    return;
+  }
+  // The observation's codes in 4 registers; a byte permute of two of them reads the codes of the 64 slots
+  // of 8 trees, and bit 7 of a slot's feature picks the pair (as in ctr_lookup).
+  alignas(64) uint8_t table[256] = {};
+  for (uint32_t f = 0; f < v.n_features; ++f) table[f] = codes[size_t{f} * n_obs + i];
+  __m512i tab[4];
+  for (int g = 0; g < 4; ++g) tab[g] = _mm512_load_si512(table + 64 * g);
+  for (uint32_t t0 = 0; t0 < v.n_trees; t0 += 8) {
+    const __m512i feature = _mm512_loadu_si512(v.slot_feature + size_t{8} * t0);
+    const __m512i arg = _mm512_loadu_si512(v.slot_arg + size_t{8} * t0);
+    __m512i x = _mm512_permutex2var_epi8(tab[0], feature, tab[1]);
+    if (v.n_features > 128) {
+      x = _mm512_mask_blend_epi8(_mm512_movepi8_mask(feature), x, _mm512_permutex2var_epi8(tab[2], feature, tab[3]));
+    }
+    const uint64_t gt = _mm512_cmpgt_epu8_mask(x, arg);
+    const uint64_t eq = _mm512_cmpeq_epu8_mask(x, arg);
+    const uint64_t out = (gt & ~v.slot_eq[t0 / 8]) | (eq & v.slot_eq[t0 / 8]);
+    std::memcpy(idx + t0, &out, 8);
+  }
 }
 #endif
 

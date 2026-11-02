@@ -91,6 +91,15 @@ struct OTEView {
   const uint8_t* cond_kind = nullptr;
   const uint8_t* cond_arg = nullptr;
   const uint32_t* split_cond = nullptr;
+
+  // The splits again as 8 byte slots per tree (tree t: slots 8t .. 8t + 7, slot l = level l), for the
+  // single-observation kernels (leaves_one). Levels beyond a tree's depth, and the trees that pad the
+  // count to a multiple of 8, hold a split that is never true (code > 255). So the outcomes of the 64
+  // slots of 8 trees form one 64-bit mask whose byte j is the leaf index of tree j. Null if there are
+  // more than 256 split features (a slot's feature is one byte).
+  const uint8_t* slot_feature = nullptr;
+  const uint8_t* slot_arg = nullptr;
+  const uint64_t* slot_eq = nullptr;  // per 8 trees: bit s set = slot s tests code == arg, else code > arg
   LeafType leaf_type = LeafType::Float32;
 
   // Int8 leaves: the value of code q of tree t is q * unit * mult[t], where
@@ -130,6 +139,16 @@ namespace scalar {
 // encoding and, except avx512_vbmi, its CTR lookup. The *_tail functions work on observations
 // [i0, n_obs) of a block of `n_obs` observations.
 
+/// The leaf index of observation i of a block of `n_obs` observations in every tree, into idx, which has
+/// room for n_trees rounded up to a multiple of 8. Each backend has one; the *_tail functions call it for
+/// each observation when there are only a few, where a pass over the observations per split would cost
+/// more in loop setup than in compares. This one evaluates every distinct split condition once and lets
+/// the trees read their results.
+void leaves_one(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, uint8_t* idx);
+
+/// A backend's leaves_one.
+using LeavesOne = void (*)(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, uint8_t* idx);
+
 /// Writes the numeric codes of observations [i0, n_obs) (see encode_numeric).
 void encode_numeric_tail(const OTEView& v, const float* X, size_t n_obs, size_t i0, uint8_t* codes);
 
@@ -138,11 +157,14 @@ void encode_numeric_tail(const OTEView& v, const float* X, size_t n_obs, size_t 
 /// backend, so every backend gives the same bits: Float32 adds each tree's
 /// leaf value to the margin in tree order; Int8 adds, block by block,
 /// unit * (the exact integer sum of q * mult over the block's trees).
-void accumulate_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, double* margins);
+/// `one` is the backend's leaves_one.
+void accumulate_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, double* margins,
+                     LeavesOne one);
 
 /// Writes the leaf indices of observations [i0, n_obs) in every tree (out: observations x
-/// n_trees of the block, row-major).
-void leaf_index_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, uint8_t* out);
+/// n_trees of the block, row-major); `one` is the backend's leaves_one.
+void leaf_index_tail(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i0, uint8_t* out,
+                     LeavesOne one);
 
 /// Byte codes for a block of `n_obs` observations, feature-major: codes[f * n_obs + i].
 /// The code of a numeric split feature is the number of its borders b with
@@ -193,6 +215,10 @@ void encode_numeric(const OTEView& v, const float* X, size_t n_obs, uint8_t* cod
 void accumulate(const OTEView& v, const uint8_t* codes, size_t n_obs, double* margins);
 void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* out);
 
+/// leaves_one with byte shuffles over 16-byte pieces of the observation's codes; also the
+/// avx512 backend's (AVX-512 CPUs have AVX2).
+void leaves_one(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, uint8_t* idx);
+
 }  // namespace avx2
 
 namespace avx512 {
@@ -213,6 +239,9 @@ void encode_numeric(const OTEView& v, const float* X, size_t n_obs, uint8_t* cod
 void accumulate(const OTEView& v, const uint8_t* codes, size_t n_obs, double* margins);
 void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* out);
 void ctr_lookup(const OTEView& v, uint32_t q, const uint64_t* hash, size_t n_obs, uint8_t* codes);
+
+/// leaves_one with one two-table byte permute per 8 trees (up to 128 split features).
+void leaves_one(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, uint8_t* idx);
 
 }  // namespace avx512_vbmi
 

@@ -194,20 +194,19 @@ NB_MODULE(_boxwood, m) {
       .def(
           "predict_margin",
           [](const ObliviousTreeEnsemble& self, Input x, CatColumns categorical) {
-            return compute(self, &ObliviousTreeEnsemble::predict_margin, x, categorical,
-                           self.info().n_outputs);
+            return compute(self, &ObliviousTreeEnsemble::predict_margin, x, categorical, self.n_outputs());
           },
           nb::arg("X"), nb::arg("categorical"))
       .def(
           "predict",
           [](const ObliviousTreeEnsemble& self, Input x, CatColumns categorical) {
-            return compute(self, &ObliviousTreeEnsemble::predict, x, categorical, self.info().n_outputs);
+            return compute(self, &ObliviousTreeEnsemble::predict, x, categorical, self.n_outputs());
           },
           nb::arg("X"), nb::arg("categorical"))
       .def(
           "leaf_index",
           [](const ObliviousTreeEnsemble& self, Input x, CatColumns categorical) {
-            return compute(self, &ObliviousTreeEnsemble::leaf_index, x, categorical, self.info().n_trees);
+            return compute(self, &ObliviousTreeEnsemble::leaf_index, x, categorical, self.n_trees());
           },
           nb::arg("X"), nb::arg("categorical"))
       .def(

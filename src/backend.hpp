@@ -19,6 +19,7 @@ struct Backend {
   void (*accumulate)(const OTEView&, const uint8_t* codes, size_t n_obs, double* margins);
   void (*leaf_index)(const OTEView&, const uint8_t* codes, size_t n_obs, uint8_t* out);
   scalar::CtrLookup ctr_lookup;
+  scalar::LeavesOne leaves_one;
 };
 
 /// The first available backend of the table (fastest first), cached after the

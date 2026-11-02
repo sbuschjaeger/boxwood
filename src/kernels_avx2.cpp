@@ -15,6 +15,7 @@
 
 #include <immintrin.h>
 
+#include <cstring>
 
 #include "kernels.hpp"
 #include "simd.hpp"
@@ -248,7 +249,7 @@ void accumulate_float(const OTEView& v, const uint8_t* codes, size_t n_obs, doub
       for (uint32_t k = 0; k < v.K; ++k) add_block(v, t0, nb, k, idx, margins + i0 * v.K + k);
     }
   }
-  scalar::accumulate_tail(v, codes, n_obs, i0, margins);
+  scalar::accumulate_tail(v, codes, n_obs, i0, margins, leaves_one);
 }
 
 /// Adds q[j] * mult[j] of four trees to the int32 sums of 32 observations, where q[j]
@@ -337,7 +338,7 @@ void accumulate_int8(const OTEView& v, const uint8_t* codes, size_t n_obs, doubl
     }
     copy_margins(i0, false);
   }
-  scalar::accumulate_tail(v, codes, n_obs, i0, margins);
+  scalar::accumulate_tail(v, codes, n_obs, i0, margins, leaves_one);
 }
 
 }  // namespace
@@ -362,7 +363,38 @@ void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* o
       for (int j = 0; j < 32; ++j) out[(i0 + static_cast<size_t>(j)) * T + t] = idx[j];
     }
   }
-  scalar::leaf_index_tail(v, codes, n_obs, i0, out);
+  scalar::leaf_index_tail(v, codes, n_obs, i0, out, leaves_one);
+}
+
+void leaves_one(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, uint8_t* idx) {
+  if (v.slot_feature == nullptr) {
+    scalar::leaves_one(v, codes, n_obs, i, idx);
+    return;
+  }
+  // The observation's codes in 16-byte pieces: a slot reads byte feature & 15 of piece feature >> 4,
+  // one shuffle per piece for the 32 slots of 4 trees.
+  alignas(16) uint8_t table[256] = {};
+  for (uint32_t f = 0; f < v.n_features; ++f) table[f] = codes[size_t{f} * n_obs + i];
+  const uint32_t pieces = (v.n_features + 15) / 16;
+  const __m256i bias = _mm256_set1_epi8(0x70);
+  for (uint32_t t0 = 0; t0 < v.n_trees; t0 += 4) {
+    const __m256i feature = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(v.slot_feature + size_t{8} * t0));
+    const __m256i arg = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(v.slot_arg + size_t{8} * t0));
+    __m256i x = _mm256_setzero_si256();
+    for (uint32_t p = 0; p < pieces; ++p) {
+      // feature ^ (p << 4) is 0..15 for the slots of piece p; adding 0x70 with saturation sets bit 7
+      // for all others, for which the shuffle gives 0.
+      const __m256i piece = _mm256_broadcastsi128_si256(_mm_load_si128(reinterpret_cast<const __m128i*>(table + 16 * p)));
+      const __m256i sel = _mm256_adds_epu8(_mm256_xor_si256(feature, _mm256_set1_epi8(static_cast<char>(p << 4))), bias);
+      x = _mm256_or_si256(x, _mm256_shuffle_epi8(piece, sel));
+    }
+    // Unsigned bytes: code <= arg is max(code, arg) == arg.
+    const uint32_t le = static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_max_epu8(x, arg), arg)));
+    const uint32_t eq = static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(x, arg)));
+    const uint32_t kind = static_cast<uint32_t>(v.slot_eq[t0 / 8] >> (8 * (t0 % 8)));
+    const uint32_t out = (~le & ~kind) | (eq & kind);
+    std::memcpy(idx + t0, &out, 4);
+  }
 }
 
 }  // namespace avx2
