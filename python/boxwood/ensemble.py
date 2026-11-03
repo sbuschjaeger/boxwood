@@ -197,7 +197,8 @@ class ObliviousTreeEnsemble:
             # na_value turns pandas' missing values (pd.NA of nullable columns) into NaN.
             X = X.to_numpy(dtype=object, na_value=np.nan)
         if isinstance(X, pd.DataFrame):
-            numeric, columns = X.iloc[:, num_idx], lambda c: X.iloc[:, c]
+            # na_value: older pandas cannot convert pd.NA of nullable columns to float.
+            numeric, columns = X.iloc[:, num_idx].to_numpy(dtype=np.float32, na_value=np.nan), lambda c: X.iloc[:, c]
         else:
             # An all-numeric float32 array in C order goes to the core without a copy.
             numeric, columns = (X if not cat_idx else X[:, num_idx]), lambda c: X[:, c]

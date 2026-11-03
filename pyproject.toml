@@ -9,7 +9,12 @@ description = "Oblivious tree ensembles from CatBoost: refit, prune, update and 
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-dependencies = ["numpy", "pandas", "scikit-learn", "catboost"]
+# The oldest versions the tests pass with (on Python 3.10, from 2021/22).
+dependencies = ["numpy>=1.21.6", "pandas>=1.3.5", "scikit-learn>=1.0.2", "catboost>=1.0.6"]
+
+[project.optional-dependencies]
+# The tools of the development build (CMake presets), the tests and the documentation.
+dev = ["nanobind>=2.0", "scikit-build-core>=0.11", "pytest", "zensical", "mkdocstrings-python"]
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"

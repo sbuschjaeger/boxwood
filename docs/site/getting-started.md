@@ -14,12 +14,12 @@ pip builds the C++ extension with CMake (through scikit-build-core, in `build/pi
 
 ## Build for development
 
-The development build needs CMake 3.21 and Ninja, and a Python environment with `nanobind`, `numpy`, `pandas`,
-`catboost` and `scikit-learn`.
+The development build needs CMake 3.21 and Ninja, and a Python environment with the package's dependencies and its
+`dev` extra (`nanobind`, `scikit-build-core`, `pytest` and the documentation tools).
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install nanobind numpy pandas catboost scikit-learn
+.venv/bin/pip install ".[dev]"
 cmake --preset release           # configures build/release with .venv/bin/python
 cmake --build build/release -j8
 ```
