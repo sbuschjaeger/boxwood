@@ -4,6 +4,7 @@
 #include "boxwood/ensemble.hpp"
 
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <optional>
 #include <string>
@@ -147,6 +148,10 @@ FitReport run_strategy(Task task, FitData& d, const FitOptions& options, std::ve
     const double hold = has_hold ? holdout_loss_at(task, d, theta) : nan;
     if (i == 0) rep.objective_start = r.objective_start;  // the first run starts at the anchor
     rep.path.push_back(PathStep{lam, r.objective, hold, r.iterations});
+    if (options.verbose) {
+      std::fprintf(stderr, "boxwood fit: lambda %.0e, objective %.6g, holdout loss %.6g, %d iterations\n", lam,
+                   r.objective, hold, r.iterations);
+    }
     if (!has_hold || hold < best_hold) {
       best_hold = hold;
       best_theta = theta;

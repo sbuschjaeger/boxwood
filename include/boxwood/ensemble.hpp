@@ -81,6 +81,7 @@ struct FitOptions {
   // Prune to at most this many bytes of to_bytes(), without the state of online
   // updates with Adam (16 bytes per leaf value once `update` ran with Adam).
   std::optional<uint64_t> max_bytes;
+  bool verbose = false;  // one line per optimizer run (lambda, objective, holdout loss) on stderr
 };
 
 /// One optimizer run of a fit: its lambda, the objective and the holdout loss

@@ -430,6 +430,18 @@ def test_path_keeps_best_and_stops(trained):
     assert len(holds) == _expected_path_count(holds)
 
 
+def test_verbose_prints_one_line_per_run(trained, capfd):
+    X, y, Xh, yh = _path_data()
+    js = trained("m3c_path", X, y, loss_function="Logloss")
+    ote = bw.ObliviousTreeEnsemble.from_catboost_json(js)
+    ote.fit(X, y, Xh, yh, strategy="path", max_iter=50)
+    assert capfd.readouterr().err == ""
+    rep = ote.fit(X, y, Xh, yh, strategy="path", max_iter=50, verbose=True)
+    lines = capfd.readouterr().err.splitlines()
+    assert len(lines) == len(rep["path"])
+    assert all(line.startswith("boxwood fit: lambda ") for line in lines)
+
+
 def test_path_warm_start_reaches_cold_optimum(trained):
     X, y, Xh, yh = _path_data()
     js = trained("m3c_path", X, y, loss_function="Logloss")

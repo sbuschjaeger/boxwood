@@ -323,6 +323,7 @@ class ObliviousTreeEnsemble:
         patience: int = 10,
         split_budget: int | None = None,
         max_bytes: int | None = None,
+        verbose: bool = False,
     ) -> dict:
         """Refit the leaf values and the bias, keeping the splits fixed.
 
@@ -380,6 +381,8 @@ class ObliviousTreeEnsemble:
                 pruning, without the state of online updates with Adam;
                 ``None`` (default) does not prune. Not together with
                 ``split_budget``.
+            verbose: Print one line per optimizer run (its lambda, objective,
+                holdout loss and iterations) to stderr while the fit runs.
 
         Returns:
             A dict with ``objective_start`` (J at the anchor), ``objective``
@@ -415,7 +418,7 @@ class ObliviousTreeEnsemble:
         w_arr = _as_weights(sample_weight)
         return self._inner.fit(
             numeric, cats, y_arr, w_arr, hold_num, hold_cats, hold_y, hold_w,
-            lam, optimizer, learning_rate, max_iter, tol, patience, strategy, split_budget, max_bytes,
+            lam, optimizer, learning_rate, max_iter, tol, patience, strategy, split_budget, max_bytes, verbose,
         )
 
     def update(self, X, y, steps: int = 1, sample_weight=None) -> dict:

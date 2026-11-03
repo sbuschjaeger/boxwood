@@ -13,7 +13,6 @@ _CATBOOST_DEFAULTS = dict(
     depth=6,
     iterations=10000,
     use_best_model=True,
-    verbose=0,
     allow_writing_files=False,
 )
 
@@ -76,17 +75,16 @@ class _BoxwoodBase(BaseEstimator):
 
     def __init__(self, catboost_params=None, strategy="path",
                  optimizer="tree_newton", split_budget=None, max_bytes=None,
-                 leaf_type="int8", holdout_fraction=0.125, random_state=0):
+                 leaf_type="int8", holdout_fraction=0.125, random_state=0, verbose=False):
         """Store the parameters; nothing happens until :meth:`fit`.
 
         Args:
             catboost_params: Extra parameters for the CatBoost constructor,
                 applied on top of ``learning_rate=0.05, depth=6,
                 iterations=10000, use_best_model=True,
-                random_seed=random_state, verbose=0,
-                allow_writing_files=False`` and
+                random_seed=random_state, allow_writing_files=False``,
                 ``early_stopping_rounds`` from :func:`early_stopping_rounds`
-                (AutoGluon's rule). ``loss_function`` is set by the target
+                (AutoGluon's rule) and ``verbose`` (100 with ``verbose``, else 0). ``loss_function`` is set by the target
                 and cannot be overridden.
             strategy: The leaf-refit strength strategy: ``"path"``,
                 ``"early_stop"`` or ``"fixed"`` (see
@@ -109,6 +107,8 @@ class _BoxwoodBase(BaseEstimator):
                 given to :meth:`fit`.
             random_state: The seed for the holdout split and the CatBoost
                 training.
+            verbose: Print the progress: CatBoost's holdout metric every 100
+                iterations and one line per run of the leaf refit.
         """
         self.catboost_params = catboost_params
         self.strategy = strategy
@@ -118,6 +118,7 @@ class _BoxwoodBase(BaseEstimator):
         self.leaf_type = leaf_type
         self.holdout_fraction = holdout_fraction
         self.random_state = random_state
+        self.verbose = verbose
 
     def _fit_common(self, X, y, X_holdout, y_holdout, sample_weight):
         """Run the shared pipeline and return ``self``.
@@ -171,7 +172,7 @@ class _BoxwoodBase(BaseEstimator):
             _, y_hold = self._encode(y_holdout)
 
         params = dict(_CATBOOST_DEFAULTS, random_seed=self.random_state,
-                      early_stopping_rounds=early_stopping_rounds(len(X)))
+                      early_stopping_rounds=early_stopping_rounds(len(X)), verbose=100 if self.verbose else 0)
         params.update(self.catboost_params or {})
         params["loss_function"] = loss  # fixed by the target, not overridable
         model = (CatBoostClassifier if self._classifier else CatBoostRegressor)(**params)
@@ -184,7 +185,7 @@ class _BoxwoodBase(BaseEstimator):
         self.fit_report_ = self.ensemble_.fit(
             X, target, X_hold, y_hold, strategy=self.strategy, optimizer=self.optimizer,
             sample_weight=w, holdout_weight=w_hold,
-            split_budget=self.split_budget, max_bytes=self.max_bytes,
+            split_budget=self.split_budget, max_bytes=self.max_bytes, verbose=self.verbose,
         )
         return self
 

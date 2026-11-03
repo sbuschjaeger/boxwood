@@ -139,11 +139,12 @@ Strategy strategy_kind(std::string_view name) {
 /// The options of a fit; the strategy decides whether a run stops on the holdout.
 FitOptions make_options(double lam, std::string_view optimizer, double learning_rate, int max_iter,
                        double tol, int patience, std::string_view strategy,
-                       std::optional<uint32_t> split_budget, std::optional<uint64_t> max_bytes) {
+                       std::optional<uint32_t> split_budget, std::optional<uint64_t> max_bytes, bool verbose) {
   FitOptions opt{lam, optimizer_kind(optimizer), learning_rate, StopRule{max_iter, tol, false, patience},
                 strategy_kind(strategy)};
   opt.split_budget = split_budget;
   opt.max_bytes = max_bytes;
+  opt.verbose = verbose;
   return opt;
 }
 
@@ -215,14 +216,14 @@ NB_MODULE(_boxwood, m) {
              Input x_hold, CatColumns categorical_hold, Vec y_hold, Vec weight_hold, double lam,
              std::string_view optimizer, double learning_rate, int max_iter, double tol, int patience,
              std::string_view strategy,
-             std::optional<uint32_t> split_budget, std::optional<uint64_t> max_bytes) {
+             std::optional<uint32_t> split_budget, std::optional<uint64_t> max_bytes, bool verbose) {
             const CatSpans cat = make_cat_spans(categorical);
             const CatSpans hcat = make_cat_spans(categorical_hold);
             const Batch train = make_batch(x, cat, y, weight);
             const Batch hold = make_batch(x_hold, hcat, y_hold, weight_hold);
             const FitOptions opt =
                 make_options(lam, optimizer, learning_rate, max_iter, tol, patience, strategy, split_budget,
-                             max_bytes);
+                             max_bytes, verbose);
             FitReport r;
             {
               nb::gil_scoped_release release;
@@ -233,7 +234,8 @@ NB_MODULE(_boxwood, m) {
           nb::arg("X"), nb::arg("categorical"), nb::arg("y"), nb::arg("weight"), nb::arg("X_hold"),
           nb::arg("categorical_hold"), nb::arg("y_hold"), nb::arg("weight_hold"), nb::arg("lam"),
           nb::arg("optimizer"), nb::arg("learning_rate"), nb::arg("max_iter"), nb::arg("tol"),
-          nb::arg("patience"), nb::arg("strategy"), nb::arg("split_budget"), nb::arg("max_bytes"))
+          nb::arg("patience"), nb::arg("strategy"), nb::arg("split_budget"), nb::arg("max_bytes"),
+          nb::arg("verbose"))
       .def(
           "update",
           [](ObliviousTreeEnsemble& self, Input x, CatColumns categorical, Vec y, Vec weight,
