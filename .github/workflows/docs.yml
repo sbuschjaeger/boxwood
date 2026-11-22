@@ -1,0 +1,67 @@
+name: Documentation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/docs.yml"
+      - "docs/**"
+      - "python/**"
+      - "include/**"
+      - "src/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - "pyproject.toml"
+      - "zensical.toml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/docs.yml"
+      - "docs/**"
+      - "python/**"
+      - "include/**"
+      - "src/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - "pyproject.toml"
+      - "zensical.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # Installing the package also compiles the extension, so that the Python API reference can import boxwood.
+      - run: python -m pip install ".[dev]"
+      - run: zensical build --clean
+      - run: test -f build/site/index.html
+      # The site links relatively, so it also works below /boxwood/ on GitHub Pages.
+      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/site
+
+  # Only the default branch deploys; a workflow_dispatch from another branch builds without publishing.
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v5
+        id: deployment
