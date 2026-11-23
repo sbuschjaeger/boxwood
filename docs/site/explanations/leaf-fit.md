@@ -51,6 +51,13 @@ over the trees (and the bias), keeping the margins of all observations up to dat
 coordinate descent sweep. For the logistic and softmax losses the step is halved while it increases \(J\) (at
 most 10 times).
 
+TreeNewton stores the leaf indices for each observation together. With at least 256 training observations,
+a nonempty forest, and more than one sweep requested, it also builds a temporary copy grouped by tree.
+Each tree update can then read one contiguous sequence of leaf indices. The copy costs one additional
+byte per training observation per tree for the duration of that optimizer run. Single-row updates and
+one-sweep fits use the original indices directly. The copy is built before the sweeps, so early stopping
+can limit the time saved.
+
 ## Adam and gradient descent
 
 `adam` (with the usual \(\beta_1 = 0.9\), \(\beta_2 = 0.999\)) and `gradient_descent` (with backtracking) take
