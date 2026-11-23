@@ -156,7 +156,8 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
   const auto data_loss = [&](const auto& slot, const std::vector<double>& step, double c) {
     double sum = 0.0;
     for (size_t i = 0; i < n; ++i) {
-      for (uint32_t k = 0; k < K; ++k) Fc[k] = F[i * K + k] + c * step[slot(i) + k];
+      const size_t base = slot(i);
+      for (uint32_t k = 0; k < K; ++k) Fc[k] = F[i * K + k] + c * step[base + k];
       double l;
       Loss::eval(Fc.data(), &y[i * K], K, l, &trial_g[i * K], &trial_h[i * K]);
       sum += s[i] * l;
@@ -172,6 +173,11 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
   double J = J_start;
   FitLoop loop(f.stop, theta, J_start);
   std::vector<double> G, H, step;  // of one block, reused across blocks
+  // The leaf-slot of every observation in the current block, reused across blocks:
+  // the strided byte leaf[i * T + b] is read once per block instead of once per
+  // histogram pass, data_loss call and margin update, where it would evict the
+  // margins and derivatives from the caches.
+  std::vector<uint32_t> sel(n);
 
   while (loop.running()) {
     const double J_before = J;
@@ -179,13 +185,18 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
       const bool is_bias = b == T;
       const size_t off = is_bias ? f.total : f.leaf_begin[b];
       const size_t len = is_bias ? K : f.leaf_begin[b + 1] - f.leaf_begin[b];
-      const auto slot = [&](size_t i) { return is_bias ? size_t{0} : size_t{leaf[i * T + b]} * K; };
+      if (is_bias)
+        std::fill(sel.begin(), sel.end(), 0u);  // the bias: one leaf, every slot is 0
+      else
+        for (size_t i = 0; i < n; ++i) sel[i] = uint32_t{leaf[i * T + b]} * K;
+      const auto slot = [&](size_t i) { return sel[i]; };
       G.assign(len, 0.0);
       H.assign(len, 0.0);
       for (size_t i = 0; i < n; ++i) {
+        const size_t base = sel[i];
         for (uint32_t k = 0; k < K; ++k) {
-          G[slot(i) + k] += s[i] * g[i * K + k];
-          H[slot(i) + k] += s[i] * h[i * K + k];
+          G[base + k] += s[i] * g[i * K + k];
+          H[base + k] += s[i] * h[i * K + k];
         }
       }
       const double lam = is_bias ? 0.0 : f.lambda;
@@ -207,7 +218,8 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
         if (!Loss::line_search || data_c + pen_c <= data + pen) {
           for (size_t j = 0; j < len; ++j) theta[off + j] += c * step[j];
           for (size_t i = 0; i < n; ++i) {
-            for (uint32_t k = 0; k < K; ++k) F[i * K + k] += c * step[slot(i) + k];
+            const size_t base = sel[i];
+            for (uint32_t k = 0; k < K; ++k) F[i * K + k] += c * step[base + k];
           }
           g.swap(trial_g);
           h.swap(trial_h);
