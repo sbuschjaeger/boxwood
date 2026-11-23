@@ -173,6 +173,12 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
   double J = J_start;
   FitLoop loop(f.stop, theta, J_start);
   std::vector<double> G, H, step;  // of one block, reused across blocks
+  // For squared loss, a leaf's curvature is its weight sum on every sweep.
+  // Save the first sweep's row-ordered sums when another sweep is possible.
+  std::vector<double> curvature;
+  if constexpr (!Loss::line_search) {
+    if (f.stop.max_iter > 1) curvature.reserve(f.total + K);
+  }
   // The leaf-slot of every observation in the current block, reused across blocks:
   // the strided byte leaf[i * T + b] is read once per block instead of once per
   // histogram pass, data_loss call and margin update, where it would evict the
@@ -181,6 +187,7 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
 
   while (loop.running()) {
     const double J_before = J;
+    const bool reuse_curvature = !curvature.empty();
     for (uint32_t b = 0; b <= T; ++b) {
       const bool is_bias = b == T;
       const size_t off = is_bias ? f.total : f.leaf_begin[b];
@@ -191,19 +198,28 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
         for (size_t i = 0; i < n; ++i) sel[i] = uint32_t{leaf[i * T + b]} * K;
       const auto slot = [&](size_t i) { return sel[i]; };
       G.assign(len, 0.0);
-      H.assign(len, 0.0);
-      for (size_t i = 0; i < n; ++i) {
-        const size_t base = sel[i];
-        for (uint32_t k = 0; k < K; ++k) {
-          G[base + k] += s[i] * g[i * K + k];
-          H[base + k] += s[i] * h[i * K + k];
+      if (reuse_curvature) {
+        // Squared loss has one output per observation.
+        for (size_t i = 0; i < n; ++i) G[sel[i]] += s[i] * g[i];
+      } else {
+        H.assign(len, 0.0);
+        for (size_t i = 0; i < n; ++i) {
+          const size_t base = sel[i];
+          for (uint32_t k = 0; k < K; ++k) {
+            G[base + k] += s[i] * g[i * K + k];
+            H[base + k] += s[i] * h[i * K + k];
+          }
+        }
+        if constexpr (!Loss::line_search) {
+          if (f.stop.max_iter > 1) curvature.insert(curvature.end(), H.begin(), H.end());
         }
       }
+      const double* block_curvature = reuse_curvature ? curvature.data() + off : H.data();
       const double lam = is_bias ? 0.0 : f.lambda;
       step.resize(len);
       for (size_t j = 0; j < len; ++j) {
         const double Gj = G[j] / S + lam * (is_bias ? 0.0 : theta[off + j] - f.anchor[off + j]);
-        const double Hj = H[j] / S + lam;
+        const double Hj = block_curvature[j] / S + lam;
         step[j] = Hj != 0.0 ? -Gj / Hj : 0.0;
       }
       for (int bt = 0; bt <= (Loss::line_search ? 10 : 0); ++bt) {
