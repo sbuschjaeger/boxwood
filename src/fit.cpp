@@ -180,10 +180,26 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
     if (f.stop.max_iter > 1) curvature.reserve(f.total + K);
   }
   // The leaf-slot of every observation in the current block, reused across blocks:
-  // the strided byte leaf[i * T + b] is read once per block instead of once per
+  // the leaf byte of each observation is read once per block instead of once per
   // histogram pass, data_loss call and margin update, where it would evict the
   // margins and derivatives from the caches.
   std::vector<uint32_t> sel(n);
+  // Repeated tree sweeps can amortize transposing the row-major leaf indices.
+  // Single-row updates use the original array directly.
+  std::vector<uint8_t> leaf_t;
+  if (n >= 256 && f.stop.max_iter > 1 && T > 0) {
+    constexpr size_t tile = 64;
+    leaf_t.resize(leaf.size());
+    for (size_t i0 = 0; i0 < n; i0 += tile) {
+      const size_t i1 = std::min(i0 + tile, n);
+      for (size_t b0 = 0; b0 < T; b0 += tile) {
+        const size_t b1 = std::min(b0 + tile, size_t{T});
+        for (size_t b = b0; b < b1; ++b)
+          for (size_t i = i0; i < i1; ++i) leaf_t[b * n + i] = leaf[i * T + b];
+      }
+    }
+  }
+  const bool tree_major = !leaf_t.empty();
 
   while (loop.running()) {
     const double J_before = J;
@@ -194,7 +210,10 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
       const size_t len = is_bias ? K : f.leaf_begin[b + 1] - f.leaf_begin[b];
       if (is_bias)
         std::fill(sel.begin(), sel.end(), 0u);  // the bias: one leaf, every slot is 0
-      else
+      else if (tree_major) {
+        const uint8_t* tree_leaf = leaf_t.data() + static_cast<size_t>(b) * n;
+        for (size_t i = 0; i < n; ++i) sel[i] = uint32_t{tree_leaf[i]} * K;
+      } else
         for (size_t i = 0; i < n; ++i) sel[i] = uint32_t{leaf[i * T + b]} * K;
       const auto slot = [&](size_t i) { return sel[i]; };
       G.assign(len, 0.0);
