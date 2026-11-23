@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "backend.hpp"
 #include "fit.hpp"
 #include "prune.hpp"
 
@@ -46,6 +47,7 @@ FitData ObliviousTreeEnsemble::fit_data(const Batch& train, const Batch& holdout
 
   const size_t T = depth_.size();
   FitData d;
+  d.newton_squared = (backend_ ? *backend_ : best_backend()).newton_squared;
   d.K = K_;
   d.n_trees = static_cast<uint32_t>(T);
   d.leaf_begin = leaf_begin_.data();

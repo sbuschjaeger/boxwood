@@ -515,3 +515,17 @@ def test_strategy_errors(trained):
         ote.fit(X, y, strategy="early_stop")  # no holdout
     with pytest.raises(ValueError):
         ote.fit(X, y, strategy="bogus")
+
+
+def test_squared_newton_backend_parity(trained):
+    X = make_X(n=259, seed=7)  # three rows after the last AVX2 vector
+    y = target("RMSE", X, 7)
+    weights = np.random.default_rng(19).uniform(0.1, 3.0, len(y))
+    text = trained("weighted_backend_regression", X, y, loss_function="RMSE")
+    fits = []
+    for name in bw.backends():
+        model = bw.ObliviousTreeEnsemble.from_catboost_json(text)
+        model.set_backend(name)
+        report = model.fit(X, y, sample_weight=weights, strategy="fixed", lam=.01, max_iter=3, tol=0)
+        fits.append((report["objective"], model.to_bytes()))
+    assert all(fit == fits[0] for fit in fits)

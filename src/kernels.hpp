@@ -133,6 +133,11 @@ constexpr uint32_t kInt8TreeBlock = 64;
 
 namespace scalar {
 
+/// Apply a full squared-loss Newton step and accumulate weighted loss in row order.
+double newton_squared(double* margin, double* gradient, const double* target, const double* weight,
+                      const uint32_t* slot, const double* step, size_t n, double sum);
+
+
 // The scalar reference. It is also the shared code of all backends: the SIMD
 // backends call it for the observations of a block that do not fill a vector
 // group (the *_tail functions), and every backend uses its categorical
@@ -209,6 +214,11 @@ void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* o
 }  // namespace scalar
 
 namespace avx2 {
+
+/// Apply a full squared-loss Newton step and accumulate weighted loss in row order.
+double newton_squared(double* margin, double* gradient, const double* target, const double* weight,
+                      const uint32_t* slot, const double* step, size_t n, double sum);
+
 
 /// AVX2 versions of the scalar block kernels; bit-identical results.
 void encode_numeric(const OTEView& v, const float* X, size_t n_obs, uint8_t* codes);

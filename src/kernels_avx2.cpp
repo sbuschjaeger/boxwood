@@ -397,5 +397,23 @@ void leaves_one(const OTEView& v, const uint8_t* codes, size_t n_obs, size_t i, 
   }
 }
 
+double newton_squared(double* margin, double* gradient, const double* target, const double* weight,
+                      const uint32_t* slot, const double* step, size_t n, double sum) {
+  size_t i = 0;
+  for (; i + 4 <= n; i += 4) {
+    const __m256d delta = _mm256_set_pd(step[slot[i + 3]], step[slot[i + 2]], step[slot[i + 1]], step[slot[i]]);
+    const __m256d value = _mm256_add_pd(_mm256_loadu_pd(margin + i), delta);
+    const __m256d d = _mm256_sub_pd(value, _mm256_loadu_pd(target + i));
+    _mm256_storeu_pd(margin + i, value);
+    _mm256_storeu_pd(gradient + i, d);
+    const __m256d loss = _mm256_mul_pd(_mm256_mul_pd(_mm256_set1_pd(0.5), d), d);
+    double terms[4];
+    _mm256_storeu_pd(terms, _mm256_mul_pd(_mm256_loadu_pd(weight + i), loss));
+    for (double term : terms) sum += term;
+  }
+  return scalar::newton_squared(margin + i, gradient + i, target + i, weight + i,
+                                slot + i, step, n - i, sum);
+}
+
 }  // namespace avx2
 }  // namespace boxwood

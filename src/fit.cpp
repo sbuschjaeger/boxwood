@@ -208,7 +208,14 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
       }
       for (int bt = 0; bt <= (Loss::line_search ? 10 : 0); ++bt) {
         const double c = std::ldexp(1.0, -bt);
-        const double data_c = data_loss(slot, step, c);
+        double data_c;
+        if constexpr (Loss::line_search) {
+          data_c = data_loss(slot, step, c);
+        } else {
+          // Squared loss always accepts the full step. Update the margins and
+          // gradient together. Its unit curvature was set on the initial pass.
+          data_c = f.newton_squared(F.data(), g.data(), y.data(), s.data(), sel.data(), step.data(), n, 0.0) / S;
+        }
         double pen_c = pen;
         for (size_t j = 0; is_bias == false && j < len; ++j) {
           const double d0 = theta[off + j] - f.anchor[off + j];
@@ -217,12 +224,14 @@ FitReport tree_newton(const FitData& f, std::vector<double>& theta) {
         }
         if (!Loss::line_search || data_c + pen_c <= data + pen) {
           for (size_t j = 0; j < len; ++j) theta[off + j] += c * step[j];
-          for (size_t i = 0; i < n; ++i) {
-            const size_t base = sel[i];
-            for (uint32_t k = 0; k < K; ++k) F[i * K + k] += c * step[base + k];
+          if constexpr (Loss::line_search) {
+            for (size_t i = 0; i < n; ++i) {
+              const size_t base = sel[i];
+              for (uint32_t k = 0; k < K; ++k) F[i * K + k] += c * step[base + k];
+            }
+            g.swap(trial_g);
+            h.swap(trial_h);
           }
-          g.swap(trial_g);
-          h.swap(trial_h);
           data = data_c;
           pen = pen_c;
           break;

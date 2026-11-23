@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "boxwood/ensemble.hpp"
+#include "kernels.hpp"
 
 namespace boxwood {
 
@@ -42,6 +43,7 @@ struct FitObservations {
 /// values of all trees in `leaf_begin` order, then the K bias values. Everything
 /// is float64 and in the units of the fit (regression: divided by sigma).
 struct FitData {
+  decltype(&scalar::newton_squared) newton_squared = scalar::newton_squared;
   uint32_t K = 1;
   uint32_t n_trees = 0;
   const uint32_t* leaf_begin = nullptr;  // n_trees + 1

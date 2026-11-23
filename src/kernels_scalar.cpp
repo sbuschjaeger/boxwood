@@ -179,5 +179,16 @@ void leaf_index(const OTEView& v, const uint8_t* codes, size_t n_obs, uint8_t* o
   leaf_index_tail(v, codes, n_obs, 0, out, leaves_one);
 }
 
+double newton_squared(double* margin, double* gradient, const double* target, const double* weight,
+                      const uint32_t* slot, const double* step, size_t n, double sum) {
+  for (size_t i = 0; i < n; ++i) {
+    margin[i] += step[slot[i]];
+    const double d = margin[i] - target[i];
+    gradient[i] = d;
+    sum += weight[i] * (0.5 * d * d);
+  }
+  return sum;
+}
+
 }  // namespace scalar
 }  // namespace boxwood

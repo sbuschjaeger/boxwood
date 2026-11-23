@@ -20,6 +20,7 @@ struct Backend {
   void (*leaf_index)(const OTEView&, const uint8_t* codes, size_t n_obs, uint8_t* out);
   scalar::CtrLookup ctr_lookup;
   scalar::LeavesOne leaves_one;
+  decltype(&scalar::newton_squared) newton_squared = scalar::newton_squared;
 };
 
 /// The first available backend of the table (fastest first), cached after the
